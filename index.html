@@ -109,6 +109,35 @@
   .ovl.spark{top:-2px;right:0;color:var(--green-l);animation:spark 1.4s linear infinite;}
   @keyframes spark{0%,100%{opacity:.4}50%{opacity:1}}
 
+  /* ── Approvals action panel ────────────────────────────── */
+  .todo{margin:18px 0 4px;border:1px solid #6b5413;border-left:6px solid var(--amber);border-radius:16px;
+    background:linear-gradient(180deg,#241f12,#1a1810);box-shadow:var(--shadow);overflow:hidden;}
+  .todo .th{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid #3a3320;}
+  .todo .th .ic{width:34px;height:34px;border-radius:9px;background:var(--amber);color:#3a2c00;
+    display:grid;place-items:center;font-size:19px;font-weight:900;flex:none;}
+  .todo .th h3{margin:0;font-size:16px;color:#ffe6a3;}
+  .todo .th p{margin:2px 0 0;font-size:11.5px;color:#c8b27a;}
+  .todo .th .cnt{margin-left:auto;font-family:"Consolas",monospace;font-size:13px;color:#ffe6a3;
+    border:1px solid #6b5413;border-radius:20px;padding:4px 12px;font-weight:700;}
+  .todo .items{padding:8px 12px 12px;}
+  .todoitem{display:flex;align-items:center;gap:14px;padding:12px 12px;border-radius:11px;}
+  .todoitem:nth-child(odd){background:#ffffff06;}
+  .todoitem .dep{display:flex;align-items:center;gap:8px;width:184px;flex:none;font-size:12.5px;color:var(--text);}
+  .todoitem .dep .dot{width:11px;height:11px;border-radius:3px;flex:none;}
+  .todoitem .mid{flex:1;min-width:0;}
+  .todoitem .ttl{font-size:14px;font-weight:700;color:#fff;line-height:1.35;}
+  .todoitem .fmt{margin-top:5px;display:flex;gap:6px;flex-wrap:wrap;}
+  .todoitem .tag{font-size:10px;color:#c8b27a;border:1px solid #6b5413;border-radius:6px;padding:1px 7px;text-transform:uppercase;}
+  .todoitem .right{display:flex;align-items:center;gap:10px;flex:none;}
+  .waitb{font-size:11.5px;font-weight:700;border-radius:20px;padding:4px 11px;white-space:nowrap;}
+  .open{font-size:12px;font-weight:700;text-decoration:none;border-radius:9px;padding:6px 13px;
+    background:var(--amber);color:#3a2c00;white-space:nowrap;}
+  .open:hover{filter:brightness(1.08);}
+  .todo .guide{padding:10px 18px 16px;font-size:11.5px;color:#c8b27a;border-top:1px solid #3a3320;}
+  .todo.clear{border-color:#2c4a38;border-left-color:var(--green-l);background:linear-gradient(180deg,#142019,#111a15);}
+  .todo.clear .th .ic{background:var(--green-l);color:#06120b;}
+  .todo.clear .th h3{color:#bdf0d4;} .todo.clear .th p{color:#8fbfa3;}
+
   /* ── Activity chart & timeline ─────────────────────────── */
   .panelbox{border:1px solid var(--line);border-radius:16px;padding:16px 18px;
     background:linear-gradient(180deg,var(--panel),var(--bg2));box-shadow:var(--shadow);}
@@ -162,7 +191,7 @@
     <div class="brand">
       <div class="logo">🌿</div>
       <div>
-        <h1>CUE 稼働モニター <span style="font-size:11px;color:#8ba0b4;font-weight:400;border:1px solid #2a3a4a;padding:2px 7px;border-radius:8px;vertical-align:middle;">公開ビュー</span></h1>
+        <h1>CUE 稼働モニター</h1>
         <p id="company">NPO法人 夢ノ森伴走者 CUE ／ AIマルチエージェント監視</p>
       </div>
     </div>
@@ -174,6 +203,8 @@
   </header>
 
   <div class="chips" id="chips"></div>
+
+  <div id="approvalsPanel"></div>
 
   <div class="sec"><h2>司令塔</h2><div class="ln"></div></div>
   <div class="grid cmd" id="cmdGrid"></div>
@@ -188,7 +219,8 @@
   <div class="panelbox" id="timeline"></div>
 
   <footer>
-    最終更新: <span id="updated">—</span> ／ このPCが稼働している間、自動で更新されます（数十秒ごと）<br>公開版は<b>状態と活動量のみ</b>を表示しています（ファイル名・企画名などの内部情報は含みません）。
+    最終更新: <span id="updated">—</span> ／ 15秒ごとに自動で読み直します（更新には <b>scan.js</b> の実行が必要です）<br>
+    状態は AI会社フォルダ内のファイル更新・shared-workspace の承認待ち / 進行中プロジェクトから自動判定しています。
   </footer>
 </div>
 
@@ -416,6 +448,8 @@ function render(d){
     `<div class="chip"><span class="sw" style="background:${c.sw}"></span>`+
     `<span class="n">${c.n}</span><span class="l">${c.l}</span></div>`).join('');
 
+  renderApprovals(d);
+
   const cmd=document.getElementById('cmdGrid'); cmd.innerHTML='';
   if(d.rep)  cmd.appendChild(card(d.rep,true));
   if(d.head) cmd.appendChild(card(d.head,true));
@@ -428,6 +462,57 @@ function render(d){
 
   const up=d.generatedAt? new Date(d.generatedAt):null;
   document.getElementById('updated').textContent = up? up.toLocaleString('ja-JP'):'—';
+}
+
+/* ✅ あなたの対応待ち（承認すべき決裁）— ローカル画面のみ */
+function waitBadge(min){
+  const days=Math.floor(min/1440);
+  let col,bg,txt;
+  if(min>=7*1440){ col='#ff6b6b';bg='#ff6b6b22';txt=days+'日待ち'; }
+  else if(min>=2*1440){ col='#f6c453';bg='#f6c45322';txt=days+'日待ち'; }
+  else { col='#8ba0b4';bg='#8ba0b422';txt=(min<60?'今日':((days||Math.floor(min/60)+'時間')+(days?'日':'')))+'待ち'; }
+  return `<span class="waitb" style="color:${col};background:${bg};border:1px solid ${col}55">${txt}</span>`;
+}
+function renderApprovals(d){
+  const el=document.getElementById('approvalsPanel'); if(!el) return;
+  const list=d.pendingApprovals;
+
+  // 公開ビュー（pendingApprovals なし）では、件数だけ静かに案内
+  if(!Array.isArray(list)){
+    const n=(d.summary&&d.summary.approval)||0;
+    el.innerHTML = n>0
+      ? `<div class="todo"><div class="th"><div class="ic">!</div><div><h3>承認待ち ${n}件</h3>`+
+        `<p>代表の対応待ちがあります（内部の詳細はローカル画面でのみ表示されます）</p></div>`+
+        `<span class="cnt">${n}</span></div></div>`
+      : '';
+    return;
+  }
+
+  if(!list.length){
+    el.innerHTML = `<div class="todo clear"><div class="th"><div class="ic">✓</div>`+
+      `<div><h3>対応待ちはありません</h3><p>承認待ちの決裁はすべて処理済みです。</p></div></div></div>`;
+    return;
+  }
+
+  const rows = list.map(a=>{
+    const opens = (a.files||[]).map(f=>`<a class="open" href="${f.url}" target="_blank" rel="noopener">${(f.ext||'file').toUpperCase()}を開く</a>`).join('');
+    const tags  = (a.formats||[]).map(x=>`<span class="tag">${x}</span>`).join('');
+    return `<div class="todoitem">`+
+      `<span class="dep"><span class="dot" style="background:${a.color}"></span>${a.emoji||''} ${a.deptName}</span>`+
+      `<span class="mid"><div class="ttl">${a.title}</div><div class="fmt">${tags}</div></span>`+
+      `<span class="right">${waitBadge(a.minAgo)}${opens}</span>`+
+    `</div>`;
+  }).join('');
+
+  el.innerHTML = `<div class="todo">`+
+    `<div class="th"><div class="ic">!</div>`+
+    `<div><h3>あなたが対応する承認待ち（古い順）</h3>`+
+    `<p>確認のうえ、approvals/ に判断を記録し、完了したら archived/ へ移動してください。</p></div>`+
+    `<span class="cnt">${list.length}件</span></div>`+
+    `<div class="items">${rows}</div>`+
+    `<div class="guide">💡 「◯◯を開く」で提出物を直接開けます（このPC上のファイル）。色：`+
+    `<span style="color:#8ba0b4">グレー=新しい</span> ／ <span style="color:#f6c453">黄=2日以上</span> ／ <span style="color:#ff6b6b">赤=7日以上（早めの対応を）</span></div>`+
+  `</div>`;
 }
 
 /* 活動量バー（過去7日の更新ファイル数） */

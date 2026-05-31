@@ -297,6 +297,12 @@
   .racts button{border:none;border-radius:11px;padding:13px 16px;font-weight:800;font-size:14px;cursor:pointer;}
   .racts .send{flex:1;background:linear-gradient(135deg,#d8a838,#b07f1f);color:#241c05;box-shadow:0 4px 14px #d8a83855;}
   .racts .cancel{background:#231d3a;color:#a99fd6;border:1px solid #463a6e;}
+  .racts .send.ok2{background:linear-gradient(135deg,#2e9e6b,#1f7a52);color:#fff;box-shadow:0 4px 14px #2e9e6b55;}
+  .catchips{display:flex;flex-wrap:wrap;gap:7px;}
+  .catchip{font-size:12px;color:#cfe9da;border:1px solid #2c4a38;border-radius:9px;padding:7px 11px;cursor:pointer;
+    background:#ffffff06;user-select:none;transition:background .1s,border-color .1s;}
+  .catchip.sel{background:#2e9e6b26;border-color:#2e9e6b;color:#bff3d6;font-weight:700;}
+  .sug{font-size:11px;color:#7fd6a8;margin-top:6px;}
   .toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);z-index:90;
     background:#1d1736;border:1px solid #5a4a86;color:#e8e2ff;padding:12px 20px;border-radius:12px;
     font-size:13px;box-shadow:var(--shadow);opacity:0;transition:opacity .2s,transform .2s;}
@@ -793,6 +799,8 @@ function decide(kind, payload){
   const q=THRONE.queue[THRONE.idx]; if(!q) return;
   // 「修正」は、まず“どこを直すか”を入力 → cordX(Codex/Claude Code)へ送る
   if(kind==='revise' && !payload){ openReviseForm(q); return; }
+  // 「承認」は、まず分類を確認 → 種類別フォルダへ移動
+  if(kind==='approve' && !payload){ openApproveForm(q); return; }
   const s=kingLoad();
   // XP計算
   let gain = kind==='approve'?12 : kind==='revise'?8 : 8;
@@ -804,8 +812,9 @@ function decide(kind, payload){
   const beforeLv=kingLevel(s.xp||0);
   s.xp=(s.xp||0)+gain; s.todayCount=(s.todayCount||0)+1;
   s.decisions[q.id]=kind;
-  s.log=s.log||[]; s.log.push({id:q.id,title:q.title,dept:q.deptName,type:q.type,decision:kind,at:new Date().toISOString(),note:payload?payload.summary:''});
+  s.log=s.log||[]; s.log.push({id:q.id,title:q.title,dept:q.deptName,type:q.type,decision:kind,at:new Date().toISOString(),note:payload?payload.summary:'',category:payload?payload.category||'':''});
   if(s.log.length>500) s.log=s.log.slice(-500);
+  if(payload && payload.moved && payload.moved.length){ s.moves=s.moves||[]; s.moves.push(...payload.moved.map(m=>({...m,at:new Date().toISOString()}))); if(s.moves.length>1000) s.moves=s.moves.slice(-1000); }
   kingSave(s);
 
   // 演出
@@ -901,12 +910,66 @@ function submitRevise(){
   drawThrone();
   decide('revise',{summary});
 }
+
+/* ── 承認 → 種類別フォルダへ分類・移動 ──────────────────────────────────── */
+const CATEGORIES=['01_助成金・申請書','02_協賛・寄付・営業','03_広報・SNS・チラシ','04_講演・ワークショップ',
+  '05_里山事業','06_Cafeむすびめ','07_小中高大学生事業','08_組織運営・会議','09_契約・法務・会計',
+  '10_CUE理念・言語化','11_未分類'];
+function catFromType(type){
+  return ({
+    '助成金・申請書':'01_助成金・申請書','協賛・寄付・営業':'02_協賛・寄付・営業','広報・発信':'03_広報・SNS・チラシ',
+    '里山事業':'05_里山事業','評価・測定':'08_組織運営・会議','企画・実行':'07_小中高大学生事業',
+    '戦略・計画':'08_組織運営・会議','成果物':'11_未分類'
+  })[type] || '11_未分類';
+}
+function openApproveForm(q){
+  THRONE.selCat = catFromType(q.type);
+  const root=document.getElementById('throneRoom');
+  root.innerHTML = hud() +
+    `<div class="tstage"><div class="rform">`+
+      `<h4 style="color:#bff3d6">✔ 承認して整理する</h4>`+
+      `<p class="q"><span style="color:${q.light}">${q.emoji||''} ${q.deptName}</span> ／ <b style="color:#fff">${q.title}</b></p>`+
+      `<div class="lab">保存先（分類）— 推定を選んでいます。必要なら変更できます</div>`+
+      `<div class="catchips" id="catChips">`+ CATEGORIES.map(c=>
+        `<span class="catchip${c===THRONE.selCat?' sel':''}" onclick="pickCat('${c}')">${c}</span>`).join('') +`</div>`+
+      `<p class="sug">📁 shared-workspace/承認済みライブラリ/<span id="catEcho">${THRONE.selCat}</span>/ へ移動します（${(q.files||[]).length}ファイル）</p>`+
+      `<div class="racts">`+
+        `<button class="send ok2" onclick="confirmApprove()">📁 この分類で承認して移動</button>`+
+        `<button class="cancel" onclick="drawThrone()">← 戻る</button>`+
+      `</div>`+
+      `<p style="font-size:11px;color:#6f6699;margin-top:12px">ブリッジ未起動のときは移動せず記録のみ（あとで /seika-check で整理できます）。移動は完了画面から取り消せます。</p>`+
+    `</div></div>`;
+  document.getElementById('kingChar')?.appendChild(kingCanvas({color:'#b7791f',light:'#f6c453',crown:true},4));
+}
+function pickCat(c){
+  THRONE.selCat=c;
+  document.querySelectorAll('#catChips .catchip').forEach(el=>el.classList.toggle('sel', el.textContent===c));
+  const echo=document.getElementById('catEcho'); if(echo) echo.textContent=c;
+}
+function confirmApprove(){
+  const q=THRONE.queue[THRONE.idx]; if(!q) return;
+  const cat=THRONE.selCat||catFromType(q.type);
+  const urls=(q.files||[]).map(f=>f.url);
+  fetch('/api/approve',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({urls,category:cat,title:q.title})})
+    .then(r=>r.ok?r.json():Promise.reject())
+    .then(j=>{
+      toast(`📁 ${j.moved?j.moved.length:0}件を ${cat} に移動しました`);
+      drawThrone(); decide('approve',{category:cat, moved:j.moved||[]});
+    })
+    .catch(()=>{
+      toast('💾 ブリッジ未起動のため移動はスキップ（承認は記録しました）');
+      drawThrone(); decide('approve',{category:cat, moved:[]});
+    });
+}
+
 function drawThroneDone(){
   const s=kingLoad();
   const today=s.log.filter(l=>new Date(l.at).toLocaleDateString('ja-JP')===new Date().toLocaleDateString('ja-JP'));
   const ap=today.filter(l=>l.decision==='approve').length;
   const rv=today.filter(l=>l.decision==='revise').length;
   const ng=today.filter(l=>l.decision==='reject').length;
+  const todayMoves=(s.moves||[]).filter(m=>new Date(m.at).toLocaleDateString('ja-JP')===new Date().toLocaleDateString('ja-JP'));
   const root=document.getElementById('throneRoom');
   root.innerHTML = hud() +
     `<div class="tstage"><div class="tdone">`+
@@ -915,17 +978,30 @@ function drawThroneDone(){
       `<p>レビュー待ちの成果物はすべて裁可しました。お疲れさまでした。</p>`+
       `<div class="sums">`+
         `<div><b style="color:#5cf0a0">${ap}</b><span>承認</span></div>`+
-        `<div><b style="color:#ffd34d">${rv}</b><span>修正</span></div>`+
+        `<div><b style="color:#ffd34d">${rv}</b><span>修正→依頼</span></div>`+
         `<div><b style="color:#ff8a8a">${ng}</b><span>却下</span></div>`+
-        `<div><b>Lv.${kingLevel(s.xp)}</b><span>${kingTitle(s.xp)}</span></div>`+
+        `<div><b style="color:#9ad8ff">${todayMoves.length}</b><span>分類・移動</span></div>`+
       `</div>`+
       `<div class="acts">`+
         `<button class="copy" onclick="copyDecisions(this)">📋 本日の決裁ログをコピー</button>`+
+        (todayMoves.length?`<button class="copy" onclick="undoMoves(this)">↩ 移動を取り消す（本日 ${todayMoves.length}件）</button>`:'')+
         `<button class="done" onclick="closeThrone()">閉じる</button>`+
       `</div>`+
-      `<p style="margin-top:14px;font-size:11px;color:#6f6699">※ ここでの裁可は記録とふりかえり用です。実ファイルの移動・提出は従来どおり代表の操作で行ってください。</p>`+
+      `<p style="margin-top:14px;font-size:11px;color:#6f6699">承認＝種類別フォルダへ移動／修正＝cordXへ修正依頼／却下＝記録のみ。移動はこの画面から取り消せます。</p>`+
     `</div></div>`;
   document.getElementById('kingChar').appendChild(kingCanvas({color:'#b7791f',light:'#f6c453',crown:true},4));
+}
+function undoMoves(btn){
+  const s=kingLoad();
+  const todayMoves=(s.moves||[]).filter(m=>new Date(m.at).toLocaleDateString('ja-JP')===new Date().toLocaleDateString('ja-JP'));
+  if(!todayMoves.length) return;
+  if(btn) btn.textContent='取り消し中…';
+  fetch('/api/undo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({entries:todayMoves})})
+    .then(r=>r.ok?r.json():Promise.reject())
+    .then(j=>{ const today=new Date().toLocaleDateString('ja-JP');
+      s.moves=(s.moves||[]).filter(m=>new Date(m.at).toLocaleDateString('ja-JP')!==today); kingSave(s);
+      toast(`↩ ${j.restored||0}件を元の場所へ戻しました`); drawThroneDone(); })
+    .catch(()=>{ toast('取り消しに失敗しました（ブリッジ未起動）'); if(btn) btn.textContent='↩ 移動を取り消す'; });
 }
 function copyDecisions(btn){
   const s=kingLoad();

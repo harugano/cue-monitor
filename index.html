@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CUE 稼働モニター｜AI会社リアルタイム監視</title>
+<style>
+  :root{
+    --bg:#0e141b; --bg2:#131c26; --panel:#19222e; --panel2:#1f2b39;
+    --line:#2a3a4a; --text:#e8eef4; --sub:#8ba0b4; --dim:#5d7185;
+    --green:#40916c; --green-l:#74c69d; --amber:#f6c453; --red:#ef6f6c; --blue:#5aa9e6;
+    --shadow:0 8px 28px rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(1200px 600px at 15% -10%, #1b2a25 0%, transparent 55%),
+      radial-gradient(1000px 500px at 110% 0%, #1a2436 0%, transparent 50%),
+      var(--bg);
+    color:var(--text);
+    font-family:"Segoe UI","Hiragino Kaku Gothic ProN","Yu Gothic UI",Meiryo,sans-serif;
+    min-height:100vh;
+  }
+  .wrap{max-width:1280px;margin:0 auto;padding:22px 22px 60px;}
+
+  /* ── Header ───────────────────────────────────────────── */
+  header.top{
+    display:flex;flex-wrap:wrap;align-items:center;gap:16px 22px;
+    padding:18px 22px;border:1px solid var(--line);border-radius:18px;
+    background:linear-gradient(135deg,var(--panel),var(--bg2));box-shadow:var(--shadow);
+  }
+  .brand{display:flex;align-items:center;gap:14px;}
+  .logo{
+    width:46px;height:46px;border-radius:12px;display:grid;place-items:center;
+    background:linear-gradient(135deg,var(--green),#2d6a4f);font-size:24px;
+    box-shadow:0 0 0 1px #ffffff15, inset 0 0 12px #ffffff20;
+  }
+  .brand h1{font-size:19px;margin:0;letter-spacing:.5px;}
+  .brand p{margin:2px 0 0;font-size:12px;color:var(--sub);}
+  .clock{margin-left:auto;text-align:right;}
+  .clock .time{font-family:"Consolas","Courier New",monospace;font-size:30px;font-weight:700;letter-spacing:1px;line-height:1;}
+  .clock .date{font-size:12px;color:var(--sub);margin-top:4px;}
+  .live{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--green-l);margin-top:6px;}
+  .live .dot{width:8px;height:8px;border-radius:50%;background:var(--green-l);box-shadow:0 0 0 0 var(--green-l);animation:pulse 1.6s infinite;}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 #74c69d88}70%{box-shadow:0 0 0 7px #74c69d00}100%{box-shadow:0 0 0 0 #74c69d00}}
+
+  /* ── Summary chips ─────────────────────────────────────── */
+  .chips{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0 6px;}
+  .chip{
+    display:flex;align-items:center;gap:9px;padding:10px 15px;border-radius:12px;
+    background:var(--panel);border:1px solid var(--line);min-width:120px;
+  }
+  .chip .n{font-size:22px;font-weight:700;font-family:"Consolas",monospace;}
+  .chip .l{font-size:11.5px;color:var(--sub);line-height:1.25;}
+  .chip .sw{width:11px;height:11px;border-radius:3px;}
+
+  /* ── Section title ─────────────────────────────────────── */
+  .sec{display:flex;align-items:center;gap:10px;margin:26px 2px 12px;}
+  .sec h2{font-size:14px;margin:0;color:var(--sub);font-weight:600;letter-spacing:1.5px;}
+  .sec .ln{flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent);}
+
+  /* ── Grid & cards ──────────────────────────────────────── */
+  .grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fill,minmax(248px,1fr));}
+  .grid.cmd{grid-template-columns:repeat(auto-fill,minmax(320px,1fr));}
+  .card{
+    position:relative;border:1px solid var(--line);border-radius:16px;overflow:hidden;
+    background:linear-gradient(180deg,var(--panel),var(--bg2));box-shadow:var(--shadow);
+    cursor:pointer;transition:transform .15s ease,border-color .15s ease;
+  }
+  .card:hover{transform:translateY(-3px);border-color:#3a506180;}
+  .card .bar{height:5px;width:100%;}
+  .card .body{padding:14px 15px 13px;display:flex;gap:13px;align-items:flex-start;}
+  .stage{
+    position:relative;width:88px;height:88px;flex:none;border-radius:13px;
+    background:radial-gradient(circle at 50% 120%, #ffffff10, transparent 60%), #0d141b;
+    border:1px solid #ffffff10;display:grid;place-items:center;overflow:visible;
+  }
+  .stage canvas{image-rendering:pixelated;image-rendering:crisp-edges;}
+  .info{min-width:0;flex:1;}
+  .info .dept{font-size:14.5px;font-weight:700;display:flex;align-items:center;gap:6px;}
+  .badge{
+    display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;
+    padding:3px 9px;border-radius:20px;margin-top:7px;
+  }
+  .task{font-size:12px;color:var(--sub);margin-top:9px;line-height:1.45;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+  .meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
+  .pill{font-size:10.5px;color:var(--dim);border:1px solid var(--line);border-radius:8px;padding:2px 7px;}
+  .pill b{color:var(--text);font-weight:700;}
+
+  /* character status ring on stage */
+  .stage.s-active{box-shadow:0 0 0 2px #74c69d, 0 0 18px #74c69d55;}
+  .stage.s-approval{box-shadow:0 0 0 2px var(--amber), 0 0 18px #f6c45355;}
+  .stage.s-recent{box-shadow:0 0 0 2px #5aa9e6aa;}
+  .stage.s-idle, .stage.s-empty{filter:saturate(.5);}
+  .stage.s-watch{box-shadow:0 0 0 2px #f6c45388;}
+
+  .bob{animation:bob .95s ease-in-out infinite alternate;}
+  @keyframes bob{from{transform:translateY(2px)}to{transform:translateY(-4px)}}
+  .sway{animation:sway 2.6s ease-in-out infinite;}
+  @keyframes sway{0%,100%{transform:rotate(-2deg)}50%{transform:rotate(2deg)}}
+
+  .ovl{position:absolute;font-size:15px;pointer-events:none;}
+  .ovl.zzz{top:-4px;right:2px;color:#8ba0b4;animation:floatz 2.4s ease-in-out infinite;}
+  @keyframes floatz{0%{opacity:.3;transform:translateY(2px)}50%{opacity:1}100%{opacity:.3;transform:translateY(-4px)}}
+  .ovl.bang{top:-8px;right:6px;color:var(--amber);font-weight:900;animation:bang .8s ease-in-out infinite;}
+  @keyframes bang{0%,100%{transform:scale(1) translateY(0)}50%{transform:scale(1.25) translateY(-3px)}}
+  .ovl.spark{top:-2px;right:0;color:var(--green-l);animation:spark 1.4s linear infinite;}
+  @keyframes spark{0%,100%{opacity:.4}50%{opacity:1}}
+
+  /* ── Activity chart & timeline ─────────────────────────── */
+  .panelbox{border:1px solid var(--line);border-radius:16px;padding:16px 18px;
+    background:linear-gradient(180deg,var(--panel),var(--bg2));box-shadow:var(--shadow);}
+  .actrow{display:flex;align-items:center;gap:12px;padding:7px 0;}
+  .actrow .nm{width:170px;flex:none;font-size:12.5px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .actrow .track{flex:1;height:16px;background:#0d141b;border-radius:8px;overflow:hidden;border:1px solid #ffffff0d;}
+  .actrow .fill{height:100%;border-radius:8px;min-width:2px;transition:width .5s ease;}
+  .actrow .val{width:104px;flex:none;text-align:right;font-size:11.5px;color:var(--sub);font-family:"Consolas",monospace;}
+  .actrow .val b{color:var(--text);font-size:13px;}
+
+  .tlrow{display:flex;align-items:center;gap:12px;padding:5px 0;}
+  .tlrow .nm{width:170px;flex:none;font-size:12px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .tlcells{display:flex;gap:3px;flex-wrap:nowrap;overflow:hidden;}
+  .tlcells .cell{width:12px;height:16px;border-radius:3px;flex:none;}
+  .tlaxis{display:flex;justify-content:space-between;margin:8px 0 0 182px;font-size:10.5px;color:var(--dim);}
+  .tllegend{display:flex;gap:14px;flex-wrap:wrap;margin-top:14px;font-size:11px;color:var(--sub);}
+  .tllegend span{display:inline-flex;align-items:center;gap:6px;}
+  .tllegend i{width:11px;height:11px;border-radius:3px;display:inline-block;}
+  .hint{font-size:11px;color:var(--dim);margin-top:10px;}
+
+  /* ── Modal ─────────────────────────────────────────────── */
+  .modal-bg{position:fixed;inset:0;background:#06090dcc;backdrop-filter:blur(3px);
+    display:none;align-items:center;justify-content:center;z-index:50;padding:20px;}
+  .modal-bg.show{display:flex;}
+  .modal{width:min(540px,100%);max-height:88vh;overflow:auto;border-radius:18px;
+    background:linear-gradient(180deg,var(--panel),var(--bg2));border:1px solid var(--line);box-shadow:var(--shadow);}
+  .modal .mh{padding:20px 22px;display:flex;gap:16px;align-items:center;}
+  .modal .mh .stage{width:96px;height:96px;}
+  .modal .mh h3{margin:0;font-size:18px;}
+  .modal .mh .mtask{font-size:13px;color:var(--sub);margin-top:8px;line-height:1.5;}
+  .mbody{padding:4px 22px 22px;}
+  .row{display:flex;justify-content:space-between;gap:12px;padding:11px 0;border-top:1px solid var(--line);font-size:13px;}
+  .row .k{color:var(--sub);}
+  .row .v{text-align:right;font-weight:600;}
+  .lst{margin:6px 0 0;padding:0;list-style:none;}
+  .lst li{font-size:12.5px;color:var(--text);padding:7px 11px;border:1px solid var(--line);
+    border-radius:9px;margin-top:7px;display:flex;justify-content:space-between;gap:10px;background:#0d141b80;}
+  .lst li .ago{color:var(--dim);font-size:11px;white-space:nowrap;}
+  .empty{font-size:12px;color:var(--dim);padding:8px 0 2px;}
+  .close{margin-left:auto;background:#0d141b;border:1px solid var(--line);color:var(--sub);
+    width:34px;height:34px;border-radius:10px;font-size:18px;cursor:pointer;flex:none;}
+  .close:hover{color:var(--text);}
+  .seclabel{font-size:11px;letter-spacing:1px;color:var(--dim);margin:18px 0 2px;font-weight:700;}
+  footer{margin-top:30px;text-align:center;font-size:11px;color:var(--dim);line-height:1.7;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand">
+      <div class="logo">🌿</div>
+      <div>
+        <h1>CUE 稼働モニター <span style="font-size:11px;color:#8ba0b4;font-weight:400;border:1px solid #2a3a4a;padding:2px 7px;border-radius:8px;vertical-align:middle;">公開ビュー</span></h1>
+        <p id="company">NPO法人 夢ノ森伴走者 CUE ／ AIマルチエージェント監視</p>
+      </div>
+    </div>
+    <div class="clock">
+      <div class="time" id="clock">--:--:--</div>
+      <div class="date" id="cdate">----年--月--日</div>
+      <div class="live"><span class="dot"></span><span id="liveTxt">自動更新中</span></div>
+    </div>
+  </header>
+
+  <div class="chips" id="chips"></div>
+
+  <div class="sec"><h2>司令塔</h2><div class="ln"></div></div>
+  <div class="grid cmd" id="cmdGrid"></div>
+
+  <div class="sec"><h2>各部署の稼働状況（8部門）</h2><div class="ln"></div></div>
+  <div class="grid" id="deptGrid"></div>
+
+  <div class="sec"><h2>活動量（過去7日間の更新ファイル数）</h2><div class="ln"></div></div>
+  <div class="panelbox" id="actChart"></div>
+
+  <div class="sec"><h2>稼働タイムライン（状態の移り変わり）</h2><div class="ln"></div></div>
+  <div class="panelbox" id="timeline"></div>
+
+  <footer>
+    最終更新: <span id="updated">—</span> ／ このPCが稼働している間、自動で更新されます（数十秒ごと）<br>公開版は<b>状態と活動量のみ</b>を表示しています（ファイル名・企画名などの内部情報は含みません）。
+  </footer>
+</div>
+
+<!-- Modal -->
+<div class="modal-bg" id="modalBg">
+  <div class="modal" id="modal"></div>
+</div>
+
+<script>
+/* ===========================================================================
+ *  ドット絵キャラクター描画
+ * ======================================================================== */
+// 16x16 ベーススプライト（H=髪/帽子, S=肌, E=目, o=口, B=服, .=透明）
+const SPRITE = [
+  "................",
+  "....HHHHHH......",
+  "..HHHHHHHHHH....",
+  "..HSSSSSSSSH....",
+  "..HSSSSSSSSH....",
+  "..HSEESSEESH....",
+  "..HSSSSSSSSH....",
+  "..HSSooooSSH....",
+  "...SSSSSSSS.....",
+  "...BBBBBBBB.....",
+  "..BBBBBBBBBB....",
+  "..BBBAABABBB....",
+  "..SBBBBBBBBS....",
+  "...BBBBBBBB.....",
+  "...BB....BB.....",
+  "...BB....BB.....",
+];
+
+function shade(hex, f){ // f<1 暗く / f>1 明るく
+  const n=parseInt(hex.slice(1),16);
+  let r=(n>>16)&255,g=(n>>8)&255,b=n&255;
+  r=Math.min(255,Math.round(r*f));g=Math.min(255,Math.round(g*f));b=Math.min(255,Math.round(b*f));
+  return `rgb(${r},${g},${b})`;
+}
+
+function drawChar(canvas, cfg){
+  const grid = SPRITE.map(r => (r+"................").slice(0,16));
+  const px = 5;                       // 1ドット=5px
+  const N = 16, dpr = window.devicePixelRatio||1;
+  canvas.width = N*px*dpr; canvas.height = N*px*dpr;
+  canvas.style.width = (N*px)+'px'; canvas.style.height=(N*px)+'px';
+  const ctx = canvas.getContext('2d'); ctx.scale(dpr,dpr); ctx.imageSmoothingEnabled=false;
+  const pal = {
+    H: cfg.color, S:'#f3c9a0', E:'#22303c', o:'#c77b62',
+    B: cfg.light, A: shade(cfg.color,0.7),
+  };
+  for(let y=0;y<N;y++) for(let x=0;x<N;x++){
+    const c = grid[y][x]; if(c==='.') continue;
+    ctx.fillStyle = pal[c] || '#000';
+    ctx.fillRect(x*px, y*px, px, px);
+  }
+  // 王冠（代表）
+  if(cfg.crown){
+    ctx.fillStyle = '#ffd34d';
+    [[5,0],[7,0],[9,0],[5,1],[6,1],[7,1],[8,1],[9,1]].forEach(([x,y])=>ctx.fillRect(x*px,y*px,px,px));
+    ctx.fillStyle='#fff3b0'; ctx.fillRect(7*px,0,px,px);
+  }
+  // クリップボード（部長）
+  if(cfg.clipboard){
+    ctx.fillStyle='#f2f3f5'; ctx.fillRect(11*px,10*px,4*px,5*px);
+    ctx.fillStyle='#9aa7b2'; ctx.fillRect(11*px,10*px,4*px,px);
+    ctx.fillStyle='#5d7185'; for(let i=0;i<3;i++) ctx.fillRect(12*px,(11+i)*px,2*px,1);
+  }
+}
+
+/* ===========================================================================
+ *  状態に応じた見た目
+ * ======================================================================== */
+const STATE = {
+  active:   {label:'稼働中',   col:'#74c69d', anim:'bob',  ovl:'spark', sym:'✦'},
+  approval: {label:'承認待ち', col:'#f6c453', anim:'bob',  ovl:'bang',  sym:'❗'},
+  recent:   {label:'最近活動', col:'#5aa9e6', anim:'sway', ovl:'',      sym:''},
+  idle:     {label:'待機中',   col:'#7b8ea0', anim:'',     ovl:'zzz',   sym:'💤'},
+  empty:    {label:'未着手',   col:'#5d7185', anim:'',     ovl:'zzz',   sym:'💤'},
+  watch:    {label:'見守り中', col:'#f6c453', anim:'sway', ovl:'',      sym:''},
+};
+
+function stage(cfg){
+  const st = STATE[cfg.state] || STATE.idle;
+  const wrap = document.createElement('div');
+  wrap.className = 'stage s-'+cfg.state;
+  const cv = document.createElement('canvas');
+  if(st.anim) cv.className = st.anim;
+  wrap.appendChild(cv);
+  drawChar(cv, cfg);
+  if(st.ovl && st.sym){
+    const o=document.createElement('div'); o.className='ovl '+st.ovl; o.textContent=st.sym;
+    wrap.appendChild(o);
+  }
+  return wrap;
+}
+
+function badge(cfg){
+  const st = STATE[cfg.state]||STATE.idle;
+  const b=document.createElement('span'); b.className='badge';
+  b.style.background = st.col+'22'; b.style.color = st.col; b.style.border='1px solid '+st.col+'55';
+  b.textContent = '● '+ (cfg.stateLabel || st.label);
+  return b;
+}
+
+/* ===========================================================================
+ *  カード生成
+ * ======================================================================== */
+function card(cfg, isCmd){
+  const c=document.createElement('div'); c.className='card';
+  const bar=document.createElement('div'); bar.className='bar';
+  bar.style.background = `linear-gradient(90deg, ${cfg.color}, ${cfg.light})`;
+  c.appendChild(bar);
+
+  const body=document.createElement('div'); body.className='body';
+  body.appendChild(stage(cfg));
+
+  const info=document.createElement('div'); info.className='info';
+  const dept=document.createElement('div'); dept.className='dept';
+  dept.innerHTML = `<span>${cfg.emoji||''}</span><span>${cfg.name}</span>`;
+  info.appendChild(dept);
+  info.appendChild(badge(cfg));
+  const task=document.createElement('div'); task.className='task'; task.textContent=cfg.task||'';
+  info.appendChild(task);
+
+  if(!isCmd){
+    const meta=document.createElement('div'); meta.className='meta';
+    const pjN = (cfg.projectsCount!=null)?cfg.projectsCount:(cfg.projects||[]).length;
+    const apN = (cfg.approvalsCount!=null)?cfg.approvalsCount:(cfg.approvals||[]).length;
+    meta.innerHTML =
+      `<span class="pill">PJ <b>${pjN}</b></span>`+
+      `<span class="pill">承認待 <b>${apN}</b></span>`+
+      `<span class="pill">ファイル <b>${cfg.fileCount||0}</b></span>`;
+    info.appendChild(meta);
+  }
+  body.appendChild(info);
+  c.appendChild(body);
+  c.onclick=()=>openModal(cfg);
+  return c;
+}
+
+/* ===========================================================================
+ *  モーダル
+ * ======================================================================== */
+function listBlock(title, items){
+  let html = `<div class="seclabel">${title}（${items.length}）</div>`;
+  if(!items.length){ return html + `<div class="empty">なし</div>`; }
+  html += '<ul class="lst">';
+  for(const it of items){
+    if(typeof it === 'string') html += `<li><span>${it}</span></li>`;
+    else html += `<li><span>${it.name}</span><span class="ago">${it.ago||''}</span></li>`;
+  }
+  return html + '</ul>';
+}
+
+function openModal(cfg){
+  const m=document.getElementById('modal');
+  const st=STATE[cfg.state]||STATE.idle;
+  m.innerHTML='';
+  const mh=document.createElement('div'); mh.className='mh';
+  mh.appendChild(stage(cfg));
+  const tt=document.createElement('div');
+  tt.innerHTML = `<h3>${cfg.emoji||''} ${cfg.name}</h3>`;
+  const bd=badge(cfg); tt.appendChild(bd);
+  const mt=document.createElement('div'); mt.className='mtask'; mt.textContent=cfg.task||'';
+  tt.appendChild(mt);
+  mh.appendChild(tt);
+  const x=document.createElement('button'); x.className='close'; x.textContent='✕';
+  x.onclick=(e)=>{e.stopPropagation();closeModal();};
+  mh.appendChild(x);
+  m.appendChild(mh);
+
+  const body=document.createElement('div'); body.className='mbody';
+  let rows='';
+  if(cfg.lastFile!==undefined)
+    rows += `<div class="row"><span class="k">最終更新ファイル</span><span class="v">${cfg.lastFile||'—'}</span></div>`;
+  if(cfg.ago!==undefined)
+    rows += `<div class="row"><span class="k">最終活動</span><span class="v">${cfg.ago||'—'}</span></div>`;
+  if(cfg.today!==undefined)
+    rows += `<div class="row"><span class="k">本日の更新</span><span class="v">${cfg.today||0} 件</span></div>`;
+  if(cfg.week!==undefined)
+    rows += `<div class="row"><span class="k">今週の更新（7日）</span><span class="v">${cfg.week||0} 件</span></div>`;
+  if(cfg.fileCount!==undefined)
+    rows += `<div class="row"><span class="k">保有ファイル数</span><span class="v">${cfg.fileCount||0} 件</span></div>`;
+  body.innerHTML = rows;
+
+  if(cfg.subUnits){
+    body.innerHTML += listBlock('担当ユニット',
+      cfg.subUnits.map(u=>({name:u.name, ago: u.minAgo===null?'記録なし':agoText(u.minAgo)})));
+  }
+  // 進行中プロジェクト：詳細（名称）があればリスト、公開版は件数のみ
+  if(Array.isArray(cfg.projects)) body.innerHTML += listBlock('進行中プロジェクト', cfg.projects);
+  else if(cfg.projectsCount!=null) body.innerHTML += `<div class="row"><span class="k">進行中プロジェクト</span><span class="v">${cfg.projectsCount} 件</span></div>`;
+  if(Array.isArray(cfg.approvals)) body.innerHTML += listBlock('承認待ちの提出物', cfg.approvals);
+  else if(cfg.approvalsCount!=null) body.innerHTML += `<div class="row"><span class="k">承認待ちの提出物</span><span class="v">${cfg.approvalsCount} 件</span></div>`;
+  m.appendChild(body);
+
+  document.getElementById('modalBg').classList.add('show');
+}
+function closeModal(){ document.getElementById('modalBg').classList.remove('show'); }
+document.getElementById('modalBg').onclick=(e)=>{ if(e.target.id==='modalBg') closeModal(); };
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeModal(); });
+
+function agoText(min){
+  if(min<1)return'たった今'; if(min<60)return min+'分前';
+  if(min<1440)return Math.floor(min/60)+'時間前'; return Math.floor(min/1440)+'日前';
+}
+
+/* ===========================================================================
+ *  描画 & データ読み込み
+ * ======================================================================== */
+function render(d){
+  if(!d) return;
+  document.getElementById('company').textContent = d.company + ' ／ AIマルチエージェント監視';
+
+  const s=d.summary||{};
+  const chips=[
+    {n:s.active||0,  l:'稼働中',      sw:'#74c69d'},
+    {n:s.recent||0,  l:'最近活動',    sw:'#5aa9e6'},
+    {n:s.idle||0,    l:'待機・未着手', sw:'#7b8ea0'},
+    {n:s.approval||0,l:'承認待ち',    sw:'#f6c453'},
+    {n:s.projects||0,l:'進行中PJ',    sw:'#b388ff'},
+    {n:s.todayTotal||0,l:'本日の更新', sw:'#ff8a65'},
+  ];
+  document.getElementById('chips').innerHTML = chips.map(c=>
+    `<div class="chip"><span class="sw" style="background:${c.sw}"></span>`+
+    `<span class="n">${c.n}</span><span class="l">${c.l}</span></div>`).join('');
+
+  const cmd=document.getElementById('cmdGrid'); cmd.innerHTML='';
+  if(d.rep)  cmd.appendChild(card(d.rep,true));
+  if(d.head) cmd.appendChild(card(d.head,true));
+
+  const g=document.getElementById('deptGrid'); g.innerHTML='';
+  (d.depts||[]).forEach(dep=> g.appendChild(card(dep,false)));
+
+  renderChart(d);
+  renderTimeline(d);
+
+  const up=d.generatedAt? new Date(d.generatedAt):null;
+  document.getElementById('updated').textContent = up? up.toLocaleString('ja-JP'):'—';
+}
+
+/* 活動量バー（過去7日の更新ファイル数） */
+function renderChart(d){
+  const el=document.getElementById('actChart'); if(!el) return;
+  const deps=d.depts||[];
+  const max=Math.max(1, ...deps.map(x=>x.week||0));
+  el.innerHTML = deps.map(x=>{
+    const w=Math.round((x.week||0)/max*100);
+    return `<div class="actrow">`+
+      `<span class="nm">${x.emoji||''} ${x.name}</span>`+
+      `<span class="track"><span class="fill" style="width:${w}%;background:linear-gradient(90deg,${x.color},${x.light})"></span></span>`+
+      `<span class="val"><b>${x.week||0}</b> 件 <span style="color:var(--dim)">/ 本日 ${x.today||0}</span></span>`+
+    `</div>`;
+  }).join('') || '<div class="hint">データがありません。</div>';
+}
+
+/* 稼働タイムライン（履歴スナップショットを状態色のセルで表示） */
+function renderTimeline(d){
+  const el=document.getElementById('timeline'); if(!el) return;
+  const hist=d.history||[];
+  const order=d.deptOrder||(d.depts||[]).map(x=>({id:x.id,name:x.name}));
+  const COL={active:'#74c69d',approval:'#f6c453',recent:'#5aa9e6',idle:'#46566a',empty:'#33414f',watch:'#f6c453'};
+  if(!hist.length){ el.innerHTML='<div class="hint">まだ履歴がありません。監視ループを動かすと、ここに状態の移り変わりが溜まっていきます。</div>'; return; }
+
+  let html='';
+  order.forEach((dep,di)=>{
+    const cells=hist.map(h=>{
+      const stt=(h.states&&h.states[di])||'idle';
+      const tm=new Date(h.t).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+      return `<span class="cell" title="${dep.name}｜${tm}｜${stateJa(stt)}" style="background:${COL[stt]||'#46566a'}"></span>`;
+    }).join('');
+    const cur=(d.depts||[]).find(x=>x.id===dep.id);
+    html+=`<div class="tlrow"><span class="nm">${(cur&&cur.emoji)||''} ${dep.name}</span><span class="tlcells">${cells}</span></div>`;
+  });
+
+  const t0=new Date(hist[0].t).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+  const t1=new Date(hist[hist.length-1].t).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+  html+=`<div class="tlaxis"><span>${t0}</span><span>← 古い　／　新しい →</span><span>${t1}</span></div>`;
+  html+=`<div class="tllegend">`+
+    `<span><i style="background:#74c69d"></i>稼働中</span>`+
+    `<span><i style="background:#5aa9e6"></i>最近活動</span>`+
+    `<span><i style="background:#f6c453"></i>承認待ち</span>`+
+    `<span><i style="background:#46566a"></i>待機・未着手</span>`+
+  `</div>`;
+  el.innerHTML=html;
+}
+function stateJa(s){return({active:'稼働中',approval:'承認待ち',recent:'最近活動',idle:'待機中',empty:'未着手',watch:'見守り中'})[s]||s;}
+
+async function loadStatus(){
+  // ① http で配信されている場合は JSON を取得（ライブ更新向き）
+  try{
+    const r=await fetch('cue-status.json?t='+Date.now(),{cache:'no-store'});
+    if(r.ok){ const j=await r.json(); window.CUE_STATUS=j; return j; }
+  }catch(e){/* file:// では失敗 → ②へ */}
+  // ② cue-status.js を読み直す（ファイルを直接開いた場合）
+  await new Promise(res=>{
+    const sc=document.createElement('script');
+    sc.src='cue-status.js?t='+Date.now();
+    sc.onload=()=>res(); sc.onerror=()=>res();
+    document.body.appendChild(sc);
+    setTimeout(()=>{ try{sc.remove();}catch(_){} }, 1500);
+  });
+  return window.CUE_STATUS||null;
+}
+
+async function refresh(){
+  const d=await loadStatus();
+  render(d || window.CUE_STATUS);
+}
+
+/* 時計 */
+function tick(){
+  const n=new Date(); const z=x=>String(x).padStart(2,'0');
+  document.getElementById('clock').textContent=`${z(n.getHours())}:${z(n.getMinutes())}:${z(n.getSeconds())}`;
+  const w=['日','月','火','水','木','金','土'][n.getDay()];
+  document.getElementById('cdate').textContent=`${n.getFullYear()}年${n.getMonth()+1}月${n.getDate()}日（${w}）`;
+}
+
+/* 起動 */
+render(window.CUE_STATUS);     // 初期表示（静的読み込みがあれば即表示）
+refresh();                     // 読み込み直後に最新データを取得（公開版=fetch）
+tick(); setInterval(tick,1000);
+setInterval(refresh,15000);    // 15秒ごとに状態を読み直す
+</script>
+</body>
+</html>

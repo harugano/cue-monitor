@@ -279,6 +279,29 @@
   .tdone .copy{background:#2a2147;color:#cdbef5;border:1px solid #463a6e;}
   .tdone .done{background:linear-gradient(135deg,#7c5cff,#5a3ff0);color:#fff;}
 
+  /* 修正依頼フォーム */
+  .rform{padding:16px 18px 18px;}
+  .rform h4{margin:0 0 4px;font-size:16px;color:#ffd9a0;}
+  .rform .q{font-size:13px;color:#cdbef5;margin:0 0 12px;}
+  .rform .lab{font-size:12px;color:#a99fd6;margin:12px 0 6px;font-weight:700;}
+  .rchk{display:flex;flex-wrap:wrap;gap:7px;}
+  .rchk label{font-size:12px;color:#e8e2ff;border:1px solid #463a6e;border-radius:9px;padding:7px 11px;cursor:pointer;
+    background:#ffffff06;user-select:none;transition:background .1s,border-color .1s;}
+  .rchk input{display:none;}
+  .rchk input:checked + span{font-weight:700;}
+  .rchk label:has(input:checked){background:#d8a83822;border-color:#d8a838;color:#ffe6a3;}
+  .rform textarea{width:100%;box-sizing:border-box;margin-top:4px;background:#0e0a1c;border:1px solid #463a6e;
+    border-radius:10px;color:#e8e2ff;font-size:13px;font-family:inherit;padding:10px 12px;resize:vertical;min-height:62px;}
+  .rform textarea::placeholder{color:#6f6699;}
+  .racts{display:flex;gap:10px;margin-top:16px;}
+  .racts button{border:none;border-radius:11px;padding:13px 16px;font-weight:800;font-size:14px;cursor:pointer;}
+  .racts .send{flex:1;background:linear-gradient(135deg,#d8a838,#b07f1f);color:#241c05;box-shadow:0 4px 14px #d8a83855;}
+  .racts .cancel{background:#231d3a;color:#a99fd6;border:1px solid #463a6e;}
+  .toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);z-index:90;
+    background:#1d1736;border:1px solid #5a4a86;color:#e8e2ff;padding:12px 20px;border-radius:12px;
+    font-size:13px;box-shadow:var(--shadow);opacity:0;transition:opacity .2s,transform .2s;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px);}
+
   /* ── Modal ─────────────────────────────────────────────── */
   .modal-bg{position:fixed;inset:0;background:#06090dcc;backdrop-filter:blur(3px);
     display:none;align-items:center;justify-content:center;z-index:50;padding:20px;}
@@ -766,8 +789,10 @@ function confettiBurst(){
     s.style.animationDuration=(0.7+Math.random()*0.8)+'s'; s.style.animationDelay=(Math.random()*0.15)+'s';
     c.appendChild(s); setTimeout(()=>s.remove(),1700); }
 }
-function decide(kind){
+function decide(kind, payload){
   const q=THRONE.queue[THRONE.idx]; if(!q) return;
+  // 「修正」は、まず“どこを直すか”を入力 → cordX(Codex/Claude Code)へ送る
+  if(kind==='revise' && !payload){ openReviseForm(q); return; }
   const s=kingLoad();
   // XP計算
   let gain = kind==='approve'?12 : kind==='revise'?8 : 8;
@@ -779,7 +804,7 @@ function decide(kind){
   const beforeLv=kingLevel(s.xp||0);
   s.xp=(s.xp||0)+gain; s.todayCount=(s.todayCount||0)+1;
   s.decisions[q.id]=kind;
-  s.log=s.log||[]; s.log.push({id:q.id,title:q.title,dept:q.deptName,type:q.type,decision:kind,at:new Date().toISOString()});
+  s.log=s.log||[]; s.log.push({id:q.id,title:q.title,dept:q.deptName,type:q.type,decision:kind,at:new Date().toISOString(),note:payload?payload.summary:''});
   if(s.log.length>500) s.log=s.log.slice(-500);
   kingSave(s);
 
@@ -805,10 +830,76 @@ function decide(kind){
   setTimeout(()=>{ THRONE.idx++; drawThrone(); }, 720);
 }
 function skipQuest(){
-  if(THRONE.idx>=THRONE.queue.length-0) {}
   const q=THRONE.queue.splice(THRONE.idx,1)[0];
   if(q) THRONE.queue.push(q);
   drawThrone();
+}
+
+/* ── 修正依頼フォーム → cordX(Codex/Claude Code)へ送る ───────────────────── */
+const REVISE_REASONS=[
+  '事実確認が必要（数字・固有名詞）','表現がCUEらしくない（brand-check）','構成・流れを変える',
+  '対象者・狙いがずれている','安全・同意・セーフガーディングの追記','ボリューム調整（長い/短い）',
+  '具体例・根拠を足す','その他'
+];
+function openReviseForm(q){
+  const root=document.getElementById('throneRoom');
+  root.innerHTML = hud() +
+    `<div class="tstage"><div class="rform">`+
+      `<h4>✎ 修正依頼を作成</h4>`+
+      `<p class="q"><span style="color:${q.light}">${q.emoji||''} ${q.deptName}</span> ／ <b style="color:#fff">${q.title}</b></p>`+
+      `<div class="lab">直してほしい点（複数選択可）</div>`+
+      `<div class="rchk">`+ REVISE_REASONS.map((r,i)=>
+        `<label><input type="checkbox" value="${r}"><span>${r}</span></label>`).join('') +`</div>`+
+      `<div class="lab">具体的に直してほしいこと</div>`+
+      `<textarea id="rvNote" placeholder="例：協賛メニューの金額は代表確定後に。海外向けの文脈を強める。"></textarea>`+
+      `<div class="lab">期待する状態（任意）</div>`+
+      `<textarea id="rvExpect" placeholder="例：企業協賛の1枚提案書としてそのまま使える状態"></textarea>`+
+      `<div class="racts">`+
+        `<button class="send" onclick="submitRevise()">📨 cordXへ送って修正依頼</button>`+
+        `<button class="cancel" onclick="drawThrone()">← 戻る</button>`+
+      `</div>`+
+      `<p style="font-size:11px;color:#6f6699;margin-top:12px">送信先：shared-workspace/修正依頼/（Codex/Claude Code が拾って成果物を直します）。ブリッジ未起動のときは自動でダウンロード保存します。</p>`+
+    `</div></div>`;
+  document.getElementById('kingChar')?.appendChild(kingCanvas({color:'#b7791f',light:'#f6c453',crown:true},4));
+}
+function buildReviseMd(q,reasons,note,expect){
+  const files=(q.files||[]).map(f=>`${(f.ext||'').toUpperCase()}: ${f.url}`).join('\n  ');
+  return `# 修正依頼：${q.title}\n\n`+
+    `- 部署：${q.deptName}\n- 種類：${q.type} ／ 重要度：${q.importance}\n`+
+    `- 元成果物：${q.rawName}\n- ファイル：\n  ${files||'（不明）'}\n- 依頼日時：${new Date().toLocaleString('ja-JP')}\n\n`+
+    `## 直してほしい点\n`+ (reasons.length?reasons.map(r=>`- ${r}`).join('\n'):'- （チェックなし）') +
+    (note?`\n- ${note}`:'') + `\n\n`+
+    `## 期待する状態\n${expect||'（指定なし）'}\n\n`+
+    `---\nこの修正依頼は CUE「決裁の間」から自動生成されました。\n`+
+    `担当エージェント（Codex / Claude Code）は、上記ファイルを開いて修正し、完了後この依頼を done/ へ移してください。\n`;
+}
+function toast(msg){
+  let t=document.getElementById('cueToast');
+  if(!t){ t=document.createElement('div'); t.id='cueToast'; t.className='toast'; document.body.appendChild(t); }
+  t.textContent=msg; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),2600);
+}
+function submitRevise(){
+  const q=THRONE.queue[THRONE.idx]; if(!q) return;
+  const reasons=[...document.querySelectorAll('.rchk input:checked')].map(i=>i.value);
+  const note=(document.getElementById('rvNote')?.value||'').trim();
+  const expect=(document.getElementById('rvExpect')?.value||'').trim();
+  const md=buildReviseMd(q,reasons,note,expect);
+  const summary=[...reasons, note].filter(Boolean).join(' / ').slice(0,120);
+  const hint=`${q.deptId}_${q.rawName}`;
+  // ① ブリッジへ送信（Codex/Claude Code 用フォルダに書き出し）
+  fetch('/api/revise',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({filenameHint:hint,content:md})})
+    .then(r=>r.ok?r.json():Promise.reject())
+    .then(j=>{ toast('📨 修正依頼を送信しました（'+(j.file||'修正依頼/')+'）'); })
+    .catch(()=>{ // ② フォールバック：ダウンロード保存＋コピー
+      try{ const b=new Blob([md],{type:'text/markdown'}); const a=document.createElement('a');
+        a.href=URL.createObjectURL(b); a.download=hint+'.md'; a.click(); }catch(e){}
+      if(navigator.clipboard) navigator.clipboard.writeText(md).catch(()=>{});
+      toast('💾 ブリッジ未起動のため、修正依頼を保存しました（修正依頼/ に置いてください）');
+    });
+  // 記録＋演出＋次へ
+  drawThrone();
+  decide('revise',{summary});
 }
 function drawThroneDone(){
   const s=kingLoad();

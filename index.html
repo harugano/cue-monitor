@@ -817,7 +817,7 @@ function decide(kind, payload){
   const beforeLv=kingLevel(s.xp||0);
   s.xp=(s.xp||0)+gain; s.todayCount=(s.todayCount||0)+1;
   s.decisions[q.id]=kind;
-  s.log=s.log||[]; s.log.push({id:q.id,title:q.title,dept:q.deptName,type:q.type,decision:kind,at:new Date().toISOString(),note:payload?payload.summary:'',category:payload?payload.category||'':''});
+  s.log=s.log||[]; s.log.push({id:q.id,title:q.title,dept:q.deptName,type:q.type,decision:kind,at:new Date().toISOString(),note:payload?payload.summary:'',category:payload?payload.category||'':'',paths:(q.files||[]).map(f=>relPath(f.url))});
   if(s.log.length>500) s.log=s.log.slice(-500);
   if(payload && payload.moved && payload.moved.length){ s.moves=s.moves||[]; s.moves.push(...payload.moved.map(m=>({...m,at:new Date().toISOString()}))); if(s.moves.length>1000) s.moves=s.moves.slice(-1000); }
   kingSave(s);
@@ -902,7 +902,10 @@ function submitRevise(){
   const hint=`${q.deptId}_${q.rawName}`;
   // ① ブリッジへ送信（Codex/Claude Code 用フォルダに書き出し）
   fetch('/api/revise',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({filenameHint:hint,content:md})})
+    body:JSON.stringify({filenameHint:hint,content:md,metadata:{
+      deptId:q.deptId,deptName:q.deptName,title:q.title,rawName:q.rawName,type:q.type,importance:q.importance,
+      files:q.files||[],reasons,note,expect
+    }})})
     .then(r=>r.ok?r.json():Promise.reject())
     .then(j=>{ toast('📨 修正依頼を送信しました（'+(j.file||'修正依頼/')+'）'); })
     .catch(()=>{ // ② フォールバック：ダウンロード保存＋コピー
@@ -956,7 +959,7 @@ function confirmApprove(){
   const cat=THRONE.selCat||catFromType(q.type);
   const urls=(q.files||[]).map(f=>f.url);
   fetch('/api/approve',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({urls,category:cat,title:q.title})})
+    body:JSON.stringify({urls,category:cat,title:q.title,deptId:q.deptId,rawName:q.rawTitle||q.rawName||q.title})})
     .then(r=>r.ok?r.json():Promise.reject())
     .then(j=>{
       toast(`📁 ${j.moved?j.moved.length:0}件を ${cat} に移動しました`);
@@ -988,6 +991,7 @@ function drawThroneDone(){
         `<div><b style="color:#9ad8ff">${todayMoves.length}</b><span>分類・移動</span></div>`+
       `</div>`+
       `<div class="acts">`+
+        `<button class="copy" onclick="copyLatestDecision(this)">📋 最後の謁見ログをコピー</button>`+
         `<button class="copy" onclick="copyDecisions(this)">📋 本日の決裁ログをコピー</button>`+
         (todayMoves.length?`<button class="copy" onclick="undoMoves(this)">↩ 移動を取り消す（本日 ${todayMoves.length}件）</button>`:'')+
         `<button class="done" onclick="closeThrone()">閉じる</button>`+
@@ -1008,18 +1012,111 @@ function undoMoves(btn){
       toast(`↩ ${j.restored||0}件を元の場所へ戻しました`); drawThroneDone(); })
     .catch(()=>{ toast('取り消しに失敗しました（ブリッジ未起動）'); if(btn) btn.textContent='↩ 移動を取り消す'; });
 }
+function relPath(url){ const p=String(url||'').split('/AI会社/'); return p[1]?p[1]:String(url||''); }
+
+/* 完了画面の決裁を、Codex / Claude Code 用の実行プロンプトに整形してコピー */
+function buildAgentPrompt(today){
+  const ap=today.filter(l=>l.decision==='approve');
+  const rv=today.filter(l=>l.decision==='revise');
+  const ng=today.filter(l=>l.decision==='reject');
+  const date=new Date().toLocaleDateString('ja-JP');
+  let p='';
+  p+=`# CUE 決裁反映タスク（Codex / Claude Code 用）\n\n`;
+  p+=`あなたは NPO法人 夢ノ森伴走者CUE の成果物を編集・整理するエージェントです。\n`;
+  p+=`作業フォルダ: C:\\Users\\User\\Desktop\\AI会社\n`;
+  p+=`代表が「決裁の間」で ${date} に下した判断を、以下のとおり反映してください。\n\n`;
+  p+=`## 共通ルール\n`;
+  p+=`- 方針は 01_代表室/ナレッジ/会社の方針.md と 01_代表室/ナレッジ/CUE再利用ライブラリ.md を必ず参照する\n`;
+  p+=`- 金額・契約・外部発信・方針変更は勝手に確定せず、変更案＋「代表承認待ち」と明記する\n`;
+  p+=`- 個人情報・肖像権・安全（セーフガーディング）に配慮する\n`;
+  p+=`- 認定NPO法人は目指さない方針（税制優遇・認定を前面に出さない）\n\n`;
+
+  p+=`## ① 修正（${rv.length}件）— 直してください\n`;
+  if(rv.length){
+    p+=`各成果物を下記の指示どおり修正してください。詳細な修正依頼は \`shared-workspace/修正依頼/\` の .md にもあります。\n`;
+    p+=`完了したら、その依頼ファイルを \`shared-workspace/修正依頼/done/\`（無ければ作成）へ移動してください。\n\n`;
+    rv.forEach((l,i)=>{
+      p+=`### ${i+1}. [${l.dept}] ${l.title}\n`;
+      p+=`- 直す点: ${l.note||'（修正依頼ファイル参照）'}\n`;
+      if(l.paths&&l.paths.length) p+=`- 対象ファイル:\n${l.paths.map(x=>`  - ${x}`).join('\n')}\n`;
+      p+=`\n`;
+    });
+  } else { p+=`（なし）\n\n`; }
+
+  p+=`## ② 承認（${ap.length}件）— 対応不要（記録のみ）\n`;
+  if(ap.length){
+    p+=`以下は承認され、種類別フォルダへ移動済みです。再編集は不要です。\n`;
+    ap.forEach(l=>{ p+=`- [${l.dept}] ${l.title}${l.category?` → 承認済みライブラリ/${l.category}/`:''}\n`; });
+    p+=`\n`;
+  } else { p+=`（なし）\n\n`; }
+
+  p+=`## ③ 却下（${ng.length}件）— 保留（作業しない）\n`;
+  if(ng.length){ ng.forEach(l=>{ p+=`- [${l.dept}] ${l.title}\n`; }); p+=`\n`; }
+  else { p+=`（なし）\n\n`; }
+
+  p+=`---\n以上を実行し、変更したファイルと未確定（代表承認待ち）の点を簡潔に報告してください。\n`;
+  return p;
+}
+
+function buildLatestAgentPrompt(logs){
+  const latest=(logs||[]).slice().sort((a,b)=>new Date(b.at)-new Date(a.at))[0];
+  const decisionJa={approve:'承認',revise:'修正',reject:'却下'}[latest&&latest.decision] || '未記録';
+  const at=latest&&latest.at ? new Date(latest.at).toLocaleString('ja-JP') : '未記録';
+  if(!latest){
+    return '# CUE 謁見ログ反映プロンプト（Codex / Claude Code 用）\n\n謁見ログがまだありません。\n';
+  }
+
+  let p='';
+  p+=`# CUE 謁見ログ反映プロンプト（Codex / Claude Code 用）\n\n`;
+  p+=`作業フォルダ:\nC:\\Users\\User\\Desktop\\AI会社\n\n`;
+  p+=`あなたは CUE の成果物を編集・整理するエージェントです。\n`;
+  p+=`以下の謁見ログを読み、必要なファイル編集・移動・報告を行ってください。\n\n`;
+  p+=`## 謁見結果\n`;
+  p+=`- 日時: ${at}\n`;
+  p+=`- 部署: ${latest.dept||'未記録'}\n`;
+  p+=`- 成果物: ${latest.title||'未記録'}\n`;
+  p+=`- 種別: ${latest.type||'未記録'}\n`;
+  p+=`- 判断: ${decisionJa}\n`;
+  p+=`- 代表メモ: ${latest.note||'（なし）'}\n`;
+  if(latest.category) p+=`- 承認カテゴリ: ${latest.category}\n`;
+  p+=`- 対象ファイル:\n`;
+  if(latest.paths&&latest.paths.length){
+    p+=latest.paths.map(x=>`  - ${x}`).join('\n')+`\n`;
+  } else {
+    p+=`  - （記録なし）\n`;
+  }
+  p+=`\n`;
+
+  p+=`## 実行ルール\n`;
+  p+=`- 方針は 01_代表室/ナレッジ/会社の方針.md と 01_代表室/ナレッジ/CUE再利用ライブラリ.md を必ず参照する\n`;
+  p+=`- 修正の場合は対象ファイルを編集し、必要なら shared-workspace/修正依頼/ の依頼内容も確認する\n`;
+  p+=`- 承認の場合は原則再編集せず、記録として扱う\n`;
+  p+=`- 却下の場合は作業しない\n`;
+  p+=`- 金額・契約・外部発信・方針変更は勝手に確定せず、変更案＋「代表承認待ち」と明記する\n`;
+  p+=`- 個人情報・肖像権・安全（セーフガーディング）に配慮する\n`;
+  p+=`- 変更したファイルと、代表承認待ちの点を最後に報告してください\n`;
+  return p;
+}
+
+function copyText(txt, btn, label){
+  const done=()=>{ if(btn){ const o=btn.textContent; btn.textContent=label; setTimeout(()=>btn.textContent=o,1800);} };
+  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(done).catch(done); }
+  else {
+    try{ const ta=document.createElement('textarea'); ta.value=txt; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }catch(e){}
+    done();
+  }
+}
+
+function copyLatestDecision(btn){
+  const s=kingLoad();
+  copyText(buildLatestAgentPrompt(s.log||[]), btn, '✓ 最後の謁見ログをコピーしました');
+}
+
 function copyDecisions(btn){
   const s=kingLoad();
   const today=s.log.filter(l=>new Date(l.at).toLocaleDateString('ja-JP')===new Date().toLocaleDateString('ja-JP'));
-  const jp={approve:'承認',revise:'修正',reject:'却下'};
-  let txt=`【CUE 決裁ログ ${new Date().toLocaleDateString('ja-JP')}】\n`;
-  ['approve','revise','reject'].forEach(k=>{
-    const items=today.filter(l=>l.decision===k);
-    if(items.length){ txt+=`\n■ ${jp[k]}（${items.length}）\n`+items.map(l=>`・[${l.dept}] ${l.title}`).join('\n')+'\n'; }
-  });
-  const done=()=>{ if(btn){ const o=btn.textContent; btn.textContent='✓ コピーしました'; setTimeout(()=>btn.textContent=o,1600);} };
-  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(done).catch(done); }
-  else { done(); }
+  const txt=buildAgentPrompt(today);
+  copyText(txt, btn, '✓ プロンプトをコピーしました');
 }
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeThrone(); });
 

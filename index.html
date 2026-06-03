@@ -1201,7 +1201,7 @@ function tick(){
 render(window.CUE_STATUS);     // 初期表示（静的読み込みがあれば即表示）
 refresh();                     // 読み込み直後に最新データを取得（公開版=fetch）
 tick(); setInterval(tick,1000);
-setInterval(refresh,15000);    // 15秒ごとに状態を読み直す
+setInterval(refresh,8000);     // 8秒ごとに状態を読み直す（ブリッジの自動監視と連動）
 </script>
 </body>
 </html>
